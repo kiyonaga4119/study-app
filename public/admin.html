@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study App Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Admin specific overrides */
+    .admin-header {
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .admin-nav {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .admin-nav button {
+      flex: 1;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: white;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .admin-nav button.active {
+      background: var(--primary-color);
+      color: black;
+    }
+
+    .list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.05);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .delete-btn {
+      background: var(--error-color);
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+
+    .add-form {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 20px;
+      border-radius: 15px;
+      margin-bottom: 20px;
+    }
+
+    .add-form input,
+    .add-form select,
+    .add-form textarea {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(0, 0, 0, 0.3);
+      color: white;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <header class="admin-header">
+      <h1>Admin Panel</h1>
+      <button onclick="location.href='/'"
+        style="background:none;border:none;color:white;cursor:pointer;">Appへ戻る</button>
+    </header>
+    <main>
+      <div class="admin-nav">
+        <button id="nav-users" onclick="showSection('users')">ユーザー管理</button>
+        <button id="nav-content" onclick="showSection('content')">教材管理</button>
+      </div>
+
+      <div id="section-users" style="display:none;">
+        <h2>ユーザー一覧</h2>
+        <div id="user-list" class="card">Loading...</div>
+      </div>
+
+      <div id="section-content" style="display:none;">
+        <h2>教材管理</h2>
+
+        <div class="card" style="margin-bottom: 20px; border-left: 5px solid var(--secondary-color);">
+          <h3>CSV管理</h3>
+
+          <div style="margin-bottom: 15px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 10px;">
+            <label style="margin-right:10px;">対象:</label>
+            <select id="csv-subject-select" style="padding:5px; border-radius:5px; margin-right:10px;"
+              onchange="updateCsvCategorySelect()">
+              <option value="">全教科 (一括)</option>
+            </select>
+            <select id="csv-category-select" style="padding:5px; border-radius:5px;">
+              <option value="">全単元</option>
+            </select>
+          </div>
+
+          <div style="display:flex; gap:20px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:250px;">
+              <h4>一括登録 (インポート)</h4>
+              <p style="font-size:0.8rem; margin-bottom:5px;">
+                対象を選択している場合、CSV内のsubject/category列は不要です。
+              </p>
+              <input type="file" id="csv-file" accept=".csv" style="margin-bottom:10px; width:100%;">
+              <button class="next-btn" style="padding:10px; margin-top:0;" onclick="uploadCSV()">アップロード</button>
+            </div>
+            <div style="flex:1; min-width:250px; border-left:1px solid rgba(255,255,255,0.1); padding-left:20px;">
+              <h4>一括出力 (エクスポート)</h4>
+              <p style="font-size:0.8rem; margin-bottom:10px;">
+                選択した範囲の問題をCSV形式でダウンロードします。
+              </p>
+              <button class="next-btn" style="padding:10px; margin-top:0;" onclick="exportCSV()">CSVエクスポート</button>
+            </div>
+          </div>
+
+          <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+            <h4>作成済みファイル (ダウンロード)</h4>
+            <p style="font-size:0.8rem; margin-bottom:10px;">
+              分割保存されたファイルを直接ダウンロードできます。
+            </p>
+            <div style="display:flex; gap:10px;">
+              <select id="exported-file-select" style="padding:5px; border-radius:5px; flex:1;">
+                <option value="">ファイルを選択...</option>
+              </select>
+              <button class="next-btn" style="padding:10px; margin-top:0;"
+                onclick="downloadExportedFile()">ダウンロード</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subject Management -->
+        <div class="card" style="margin-bottom: 20px;">
+          <h3>科目</h3>
+          <div id="subject-list"></div>
+          <div class="add-form">
+            <h4>科目追加</h4>
+            <input type="text" id="new-subject-name" placeholder="科目名">
+            <input type="color" id="new-subject-color" value="#00e5ff">
+            <button class="next-btn" style="margin-top:10px; padding:10px;" onclick="addSubject()">追加</button>
+          </div>
+        </div>
+
+        <!-- Category Management (Dynamic based on selected subject) -->
+        <div id="category-section" class="card" style="margin-bottom: 20px; display:none;">
+          <h3 id="selected-subject-name"></h3>
+          <div id="category-list"></div>
+          <div class="add-form">
+            <h4>単元追加</h4>
+            <input type="text" id="new-category-name" placeholder="単元名">
+            <button class="next-btn" style="margin-top:10px; padding:10px;" onclick="addCategory()">追加</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>全体設定</h3>
+          <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+            <input type="text" id="setting-font-header" placeholder="ヘッダーフォント (例: 1.2rem)" style="flex:1;">
+            <input type="text" id="setting-font-question" placeholder="問題文フォント (例: 1.5rem)" style="flex:1;">
+            <input type="text" id="setting-font-title" placeholder="タイトルフォント (例: 1.0rem)" style="flex:1;">
+            <button onclick="saveSettings()"
+              style="padding:5px 15px; background:var(--primary-color); color:white; border:none; border-radius:4px; cursor:pointer;">保存</button>
+          </div>
+        </div>
+
+        <div class="card" id="question-section" style="display:none;">
+          <h3 id="selected-category-name">問題一覧</h3>
+          <div id="question-list" class="list-container">
+            <!-- Questions will be loaded here -->
+          </div>
+          <div style="display:flex; justify-content:center; gap:20px; margin-top:20px; align-items:center;">
+            <div id="pagination" style="display:flex; gap:10px; align-items:center;">
+              <!-- Dynamic buttons will be here -->
+            </div>
+            <select id="items-per-page" onchange="changeItemsPerPage()" style="padding:5px;">
+              <option value="5">5件 / ページ</option>
+              <option value="10">10件 / ページ</option>
+              <option value="20">20件 / ページ</option>
+            </select>
+          </div>
+          <div class="add-form">
+            <h4>問題追加</h4>
+            <div style="margin-bottom:10px; display:flex; gap:20px; align-items:center;">
+              <label style="display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap;"><input
+                  type="radio" name="question-type" value="selection" checked> 選択問題</label>
+              <label style="display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap;"><input
+                  type="radio" name="question-type" value="sorting"> 整序問題</label>
+              <input type="text" id="new-question-year" placeholder="出題年 (例: 2020, 2000+)"
+                style="width:150px; margin-left:auto;">
+            </div>
+            <textarea id="new-question-text" placeholder="問題文" rows="3"
+              style="width:100%; margin-bottom:10px;"></textarea>
+            <textarea id="new-question-options" placeholder="選択肢 (カンマ区切り: am,is,are)" rows="3"
+              style="width:100%; margin-bottom:10px;"></textarea>
+            <input type="text" id="new-question-answer" placeholder="正解" style="width:100%; margin-bottom:10px;">
+            <textarea id="new-question-explanation" placeholder="解説" rows="6" style="width:100%;"></textarea>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button id="prev-question-btn" class="delete-btn"
+                style="padding:10px; flex:1; display:none; background:#555;" onclick="editPrevQuestion()">前の問題</button>
+              <button id="add-question-btn" class="next-btn" style="margin-top:10px; padding:10px; flex:2;"
+                onclick="addQuestion()">追加</button>
+              <button id="next-question-btn" class="delete-btn"
+                style="padding:10px; flex:1; display:none; background:#555;" onclick="editNextQuestion()">次の問題</button>
+              <!-- Cancel button removed as requested -->
+              <button id="cancel-edit-btn" class="delete-btn"
+                style="margin-top:10px; padding:10px; flex:1; display:none; background:#777;"
+                onclick="cancelEdit()">キャンセル</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+  <script src="admin.js?v=1.25"></script>
+</body>
+
+</html>

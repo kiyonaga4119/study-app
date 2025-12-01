@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Study App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="app">
+        <header>
+            <h1>Study App</h1>
+        </header>
+        <main id="content">
+            <!-- Login Area -->
+            <div id="login-area" class="fade-in" style="display: none;"></div>
+
+            <!-- Register Area -->
+            <div id="register-area" class="fade-in" style="display: none;"></div>
+
+            <!-- Subject Selection -->
+            <div id="subject-selection" class="fade-in" style="display: none;">
+                <h2>科目を選択してください</h2>
+                <div id="subject-list" class="grid-container"></div>
+                <button onclick="logout()" class="text-btn" style="margin-top:20px; width:100%;">ログアウト</button>
+            </div>
+
+            <!-- Type Selection (For English) -->
+            <div id="type-selection" class="fade-in" style="display: none;">
+                <button onclick="showSubjects()" class="back-btn">← 科目一覧へ戻る</button>
+                <h2>出題形式を選択</h2>
+                <div class="grid-container">
+                    <div class="card type-card" onclick="selectType('selection')">適語選択</div>
+                    <div class="card type-card" onclick="selectType('sorting')">語順整序</div>
+                </div>
+            </div>
+
+            <!-- Category Selection -->
+            <div id="category-selection" class="fade-in" style="display: none;">
+                <button onclick="backToTypesOrSubjects()" class="back-btn" id="back-to-type-btn">← 戻る</button>
+                <h2 id="category-title"></h2>
+                <div id="category-list" class="grid-container"></div>
+            </div>
+
+            <!-- Mode Selection -->
+            <div id="mode-selection" class="fade-in" style="display: none;">
+                <button onclick="backToCategories()" class="back-btn">← 単元一覧へ戻る</button>
+                <h2>学習モードを選択</h2>
+                <div class="mode-container">
+                    <div class="mode-card" onclick="startQuiz('normal')">
+                        <h3>ノーマルモード</h3>
+                        <p>順番通りに出題します。</p>
+                    </div>
+                    <div class="mode-card" onclick="startQuiz('test')">
+                        <h3>実力テストモード</h3>
+                        <p>ランダムに出題し、苦手な問題を記録します。</p>
+                    </div>
+                    <div class="mode-card" onclick="startQuiz('review')">
+                        <h3>復習モード</h3>
+                        <p>間違えた問題のみを出題します。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quiz Area -->
+            <div id="quiz-area" class="fade-in" style="display: none;"></div>
+        </main>
+    </div>
+    <script src="script.js?v=1.28"></script>
+</body>
+
+</html>
