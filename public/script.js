@@ -1,12 +1,84 @@
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = '/api';
 const app = document.getElementById('content');
 const headerTitle = document.querySelector('header h1');
 
 // State
 let currentUser = null;
-let currentSubject = null;
-let currentCategory = null;
+let currentSubjectId = null;
+let selectedType = null; // 'selection' or 'sorting' (for English)
+let soundManager = null;
+
+class SoundManager {
+  constructor() {
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.isMuted = localStorage.getItem('isMuted') === 'true';
+  }
+
+  playTone(freq, type, duration, startTime = 0) {
+    if (this.isMuted) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, this.ctx.currentTime + startTime);
+
+    const t = this.ctx.currentTime + startTime;
+    const attack = 0.01; // 10ms attack to prevent pop
+
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.1, t + attack);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + duration);
+  }
+
+  playCorrect() {
+    if (this.isMuted) return;
+    this.playTone(660, 'sine', 0.1, 0);
+    this.playTone(880, 'sine', 0.3, 0.1);
+  }
+
+  playIncorrect() {
+    if (this.isMuted) return;
+    this.playTone(150, 'sawtooth', 0.3, 0);
+  }
+
+  playTimeUp() {
+    if (this.isMuted) return;
+    this.playTone(880, 'square', 0.1, 0);
+    this.playTone(880, 'square', 0.1, 0.2);
+    this.playTone(880, 'square', 0.4, 0.4);
+  }
+
+  playBonus() {
+    if (this.isMuted) return;
+    // Major Triad Arpeggio (C5, E5, G5, C6)
+    this.playTone(523.25, 'sine', 0.1, 0);
+    this.playTone(659.25, 'sine', 0.1, 0.1);
+    this.playTone(783.99, 'sine', 0.1, 0.2);
+    this.playTone(1046.50, 'sine', 0.4, 0.3);
+  }
+
+  playTick(pitch = 800) {
+    if (this.isMuted) return;
+    this.playTone(pitch, 'sine', 0.05, 0);
+  }
+
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    localStorage.setItem('isMuted', this.isMuted);
+    return this.isMuted;
+  }
+}
 let questions = [];
+let timeAttackTimer = null;
+let timeAttackTimeout = null;
+let timeAttackScore = 0;
+let timeAttackStreak = 0;
+let timeAttackDuration = 180; // 3 minutes in seconds
+let sessionIncorrects = [];
 let currentQuestionIndex = 0;
 let userAnswers = [];
 let globalSettings = {};
@@ -14,14 +86,33 @@ let currentMode = 'normal'; // normal, test, review
 let incorrectQuestions = []; // IDs of incorrect questions
 let selectedCategoryId = null;
 let selectedCategoryName = '';
-let currentSubjectId = null;
-let selectedType = null; // 'selection' or 'sorting' (for English)
+
 
 // Init
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
+  soundManager = new SoundManager();
+  initMuteButton();
   checkLogin();
 });
+
+function initMuteButton() {
+  const header = document.querySelector('header');
+  const muteBtn = document.createElement('button');
+  muteBtn.id = 'mute-btn';
+  muteBtn.textContent = soundManager.isMuted ? '🔇' : '🔊';
+  muteBtn.style.background = 'none';
+  muteBtn.style.border = 'none';
+  muteBtn.style.fontSize = '1.5rem';
+  muteBtn.style.cursor = 'pointer';
+  muteBtn.style.marginLeft = '15px';
+  muteBtn.onclick = () => {
+    const isMuted = soundManager.toggleMute();
+    muteBtn.textContent = isMuted ? '🔇' : '🔊';
+  };
+  // Insert before the logout button if it exists, or append
+  header.appendChild(muteBtn);
+}
 
 async function loadSettings() {
   try {
@@ -459,6 +550,12 @@ async function startQuiz(mode) {
       }
 
       questions.sort(() => Math.random() - 0.5);
+    } else if (mode === 'time_attack') {
+      questions = allQuestions.sort(() => Math.random() - 0.5);
+      timeAttackScore = 0;
+      timeAttackStreak = 0;
+      sessionIncorrects = [];
+      startTimer();
     }
 
     currentQuestionIndex = 0;
@@ -548,6 +645,18 @@ function showQuestion() {
     loopSpan.textContent = ` (${loopCount}周目)`;
     loopSpan.style.marginLeft = '10px';
     progress.appendChild(loopSpan);
+  } else if (currentMode === 'time_attack') {
+    const timerSpan = document.createElement('span');
+    timerSpan.id = 'timer-display';
+    timerSpan.style.fontWeight = 'bold';
+    timerSpan.style.color = '#ff1744';
+    timerSpan.textContent = formatTime(timeAttackDuration);
+    progress.appendChild(timerSpan);
+
+    const scoreSpan = document.createElement('span');
+    scoreSpan.textContent = ` Score: ${timeAttackScore}`;
+    scoreSpan.style.marginLeft = '10px';
+    progress.appendChild(scoreSpan);
   }
 
   container.appendChild(progress);
@@ -713,6 +822,15 @@ function renderSortingState(sortArea, wordBank, allWords, currentOrder) {
 function checkAnswer(question, userAnswer, btnElement) {
   const isCorrect = userAnswer === question.answer;
 
+  // Play Sound
+  if (soundManager) {
+    // Resume context if suspended (browser policy)
+    if (soundManager.ctx.state === 'suspended') soundManager.ctx.resume();
+
+    if (isCorrect) soundManager.playCorrect();
+    else soundManager.playIncorrect();
+  }
+
   // For selection questions, allow retrying if incorrect (ONLY in Normal/Review mode?)
   // User asked for "Test Mode" to track results.
   // In Test Mode, usually you don't retry immediately, you move on?
@@ -758,10 +876,54 @@ function checkAnswer(question, userAnswer, btnElement) {
         handleCorrectAnswer(question.id);
       }
     }
+  } else if (currentMode === 'time_attack') {
+    // Disable all buttons immediately
+    const buttons = document.querySelectorAll('.option-btn');
+    buttons.forEach(b => b.disabled = true);
+
+    if (isCorrect) {
+      timeAttackStreak++;
+      const addedScore = 10 + (timeAttackStreak * 2);
+      timeAttackScore += addedScore;
+      showScoreEffect(addedScore);
+
+      if (btnElement) btnElement.classList.add('correct');
+
+      // Bonus Check
+      if (timeAttackStreak > 0 && timeAttackStreak % 5 === 0) {
+        timeAttackDuration += 10;
+        showBonusEffect();
+        if (soundManager) soundManager.playBonus();
+      } else {
+        // Normal correct sound is handled above, but if bonus plays, maybe skip normal?
+        // Actually checkAnswer plays sound at the top.
+        // If bonus plays, it will overlap with correct sound. That's fine, or we can suppress correct sound if bonus.
+        // But sound logic is at top of function.
+        // Let's just let them overlap for richness.
+      }
+
+      timeAttackTimeout = setTimeout(nextQuestion, 500);
+    } else {
+      timeAttackStreak = 0;
+      if (btnElement) btnElement.classList.add('incorrect');
+
+      // Track incorrect
+      saveIncorrectQuestion(question.id);
+      sessionIncorrects.push({ question, userAnswer });
+
+      // Highlight correct answer
+      buttons.forEach(b => {
+        if (b.textContent === question.answer) {
+          b.classList.add('correct');
+        }
+      });
+      timeAttackTimeout = setTimeout(nextQuestion, 10000);
+    }
+    return; // Skip standard feedback
   }
 
   // In Normal/Review mode, allow retry for selection questions if incorrect
-  if (currentMode !== 'test' && question.type === 'selection' && !isCorrect) {
+  if (currentMode !== 'test' && currentMode !== 'time_attack' && question.type === 'selection' && !isCorrect) {
     if (btnElement) {
       btnElement.classList.add('incorrect');
       btnElement.disabled = true;
@@ -842,6 +1004,7 @@ function checkAnswer(question, userAnswer, btnElement) {
 }
 
 function nextQuestion() {
+  if (currentMode === 'time_attack' && timeAttackDuration <= 0) return;
   currentQuestionIndex++;
   showQuestion();
 }
@@ -875,7 +1038,8 @@ function showModeSelection(categoryId, categoryName) {
     { id: 'normal', name: 'ノーマルモード', desc: '順番通りに出題します。' },
     { id: 'test', name: '実力テストモード', desc: 'ランダムに出題し、苦手な問題を記録します。' },
     { id: 'review', name: '復習モード', desc: '間違えた問題のみを出題します。' },
-    { id: 'classification', name: '仕分けモード', desc: 'ランダムに出題し、一度出題された問題はリセットするまで出題されません。' }
+    { id: 'classification', name: '仕分けモード', desc: 'ランダムに出題し、一度出題された問題はリセットするまで出題されません。' },
+    { id: 'time_attack', name: 'タイムアタックモード', desc: '3分間で何問解けるか挑戦します。' }
   ];
 
   modes.forEach(mode => {
@@ -901,6 +1065,13 @@ function showModeSelection(categoryId, categoryName) {
 }
 
 function showResult() {
+  if (timeAttackTimeout) clearTimeout(timeAttackTimeout);
+
+  if (currentMode === 'time_attack' && timeAttackDuration <= 0 && soundManager) {
+    if (soundManager.ctx.state === 'suspended') soundManager.ctx.resume();
+    soundManager.playTimeUp();
+  }
+
   headerTitle.textContent = '学習完了';
   const quizArea = document.getElementById('quiz-area');
   quizArea.innerHTML = '';
@@ -917,7 +1088,148 @@ function showResult() {
   msg.textContent = 'この単元の学習が終了しました。';
   card.appendChild(msg);
 
-  if (currentMode === 'normal') {
+  if (currentMode === 'time_attack') {
+    // Time Attack Result
+    title.textContent = 'タイムアップ！';
+    msg.textContent = `スコア: ${timeAttackScore}点`;
+    msg.style.fontSize = '1.5rem';
+    msg.style.fontWeight = 'bold';
+    msg.style.color = '#ff1744';
+
+    // Submit Score
+    const userId = currentUser ? currentUser.id : null;
+    // Submit Score
+    if (userId) {
+      fetch(`${API_BASE}/rankings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          category_id: selectedCategoryId,
+          score: timeAttackScore
+        })
+      }).then(async () => {
+        // Fetch Rankings (All, Unique, Personal)
+        const res = await fetch(`${API_BASE}/rankings/${selectedCategoryId}?user_id=${userId}`);
+        const rankingsData = await res.json(); // { all: [], unique: [], personal: [] }
+
+        // Ranking Container
+        const rankingContainer = document.createElement('div');
+        rankingContainer.style.marginTop = '20px';
+        rankingContainer.style.textAlign = 'left';
+
+        // Tabs
+        const tabs = document.createElement('div');
+        tabs.style.display = 'flex';
+        tabs.style.justifyContent = 'space-around';
+        tabs.style.marginBottom = '10px';
+
+        const createTab = (text, key, isActive) => {
+          const tab = document.createElement('button');
+          tab.textContent = text;
+          tab.style.flex = '1';
+          tab.style.padding = '10px';
+          tab.style.border = 'none';
+          tab.style.background = isActive ? '#444' : '#222';
+          tab.style.color = isActive ? '#fff' : '#aaa';
+          tab.style.cursor = 'pointer';
+          tab.style.borderBottom = isActive ? '2px solid var(--primary-color)' : '2px solid transparent';
+
+          tab.onclick = () => {
+            // Switch Tab
+            Array.from(tabs.children).forEach(t => {
+              t.style.background = '#222';
+              t.style.color = '#aaa';
+              t.style.borderBottom = '2px solid transparent';
+            });
+            tab.style.background = '#444';
+            tab.style.color = '#fff';
+            tab.style.borderBottom = '2px solid var(--primary-color)';
+
+            renderRankingTable(rankingsData[key], key);
+          };
+          return tab;
+        };
+
+        tabs.appendChild(createTab('総合順位', 'all', true));
+        tabs.appendChild(createTab('自己ベスト', 'unique', false));
+        tabs.appendChild(createTab('個人履歴', 'personal', false));
+        rankingContainer.appendChild(tabs);
+
+        // Table Container
+        const tableContainer = document.createElement('div');
+        rankingContainer.appendChild(tableContainer);
+
+        const renderRankingTable = (data, type) => {
+          tableContainer.innerHTML = '';
+          if (!data || data.length === 0) {
+            tableContainer.innerHTML = '<p style="text-align:center; color:#aaa;">データがありません</p>';
+            return;
+          }
+
+          const table = document.createElement('table');
+          table.style.width = '100%';
+          table.style.borderCollapse = 'collapse';
+          table.style.fontSize = '0.9rem';
+
+          table.innerHTML = `
+            <thead>
+              <tr style="border-bottom: 1px solid #444;">
+                <th style="padding: 8px; text-align: center;">順位</th>
+                <th style="padding: 8px; text-align: left;">名前</th>
+                <th style="padding: 8px; text-align: center;">スコア</th>
+                <th style="padding: 8px; text-align: right;">日時</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.map((r, i) => `
+                <tr style="border-bottom: 1px solid #333; background: ${r.username === currentUser.username ? 'rgba(76, 175, 80, 0.1)' : 'transparent'}">
+                  <td style="padding: 8px; text-align: center;">${i + 1}</td>
+                  <td style="padding: 8px;">${r.username}</td>
+                  <td style="padding: 8px; text-align: center; font-weight: bold; color: var(--primary-color);">${r.score}</td>
+                  <td style="padding: 8px; text-align: right; color: #aaa; font-size: 0.8rem;">${new Date(r.created_at).toLocaleDateString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          `;
+          tableContainer.appendChild(table);
+        };
+
+        // Initial Render
+        renderRankingTable(rankingsData.all, 'all');
+        card.appendChild(rankingContainer);
+      });
+    }
+
+    const btnContainer = document.createElement('div');
+    btnContainer.style.marginTop = '20px';
+    const backBtn = document.createElement('button');
+    backBtn.className = 'next-btn';
+    backBtn.textContent = 'モード選択に戻る';
+    backBtn.onclick = () => showModeSelection(selectedCategoryId, selectedCategoryName);
+    btnContainer.appendChild(backBtn);
+
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'next-btn';
+    retryBtn.textContent = '再挑戦する';
+    retryBtn.style.marginTop = '10px';
+    retryBtn.style.backgroundColor = '#ff1744'; // Red for retry/time attack
+    retryBtn.onclick = () => startQuiz('time_attack');
+    btnContainer.appendChild(retryBtn);
+
+    if (sessionIncorrects.length > 0) {
+      const reviewBtn = document.createElement('button');
+      reviewBtn.className = 'next-btn';
+      reviewBtn.textContent = '間違えた問題を確認する';
+      reviewBtn.style.marginTop = '10px';
+      reviewBtn.style.backgroundColor = '#FF9800'; // Orange
+      reviewBtn.onclick = () => showSessionReview();
+      btnContainer.appendChild(reviewBtn);
+    }
+
+    card.appendChild(btnContainer);
+
+  } else if (currentMode === 'normal') {
     // Buttons for Normal Mode
     const btnContainer = document.createElement('div');
     btnContainer.style.display = 'flex';
@@ -1067,6 +1379,136 @@ function incrementNormalLoopCount() {
   let count = getNormalLoopCount();
   count++;
   localStorage.setItem(key, count);
+}
+
+function startTimer() {
+  if (timeAttackTimer) clearInterval(timeAttackTimer);
+  timeAttackDuration = 180;
+
+  timeAttackTimer = setInterval(() => {
+    timeAttackDuration--;
+    const display = document.getElementById('timer-display');
+    if (display) {
+      display.textContent = formatTime(timeAttackDuration);
+
+      // Countdown Effect
+      if (timeAttackDuration <= 10 && timeAttackDuration > 0) {
+        display.classList.add('urgent');
+        const pitch = timeAttackDuration <= 5 ? 1200 : 800;
+        if (soundManager) soundManager.playTick(pitch);
+      } else {
+        display.classList.remove('urgent');
+      }
+    }
+
+    if (timeAttackDuration <= 0) {
+      clearInterval(timeAttackTimer);
+      showResult();
+    }
+  }, 1000);
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `残り ${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function showBonusEffect() {
+  const bonus = document.createElement('div');
+  bonus.textContent = '+10 Sec!';
+  bonus.style.position = 'fixed';
+  bonus.style.top = '50%';
+  bonus.style.left = '50%';
+  bonus.style.transform = 'translate(-50%, -50%) scale(0)';
+  bonus.style.color = '#FFD700'; // Gold
+  bonus.style.fontSize = '4rem';
+  bonus.style.fontWeight = 'bold';
+  bonus.style.textShadow = '0 0 20px rgba(255, 215, 0, 0.8), 2px 2px 0 #000';
+  bonus.style.zIndex = '1000';
+  bonus.style.pointerEvents = 'none';
+  bonus.style.transition = 'transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.5s';
+
+  document.body.appendChild(bonus);
+
+  // Animation
+  requestAnimationFrame(() => {
+    bonus.style.transform = 'translate(-50%, -50%) scale(1.5)';
+    setTimeout(() => {
+      bonus.style.opacity = '0';
+      bonus.style.transform = 'translate(-50%, -100%) scale(1.5)';
+      setTimeout(() => {
+        document.body.removeChild(bonus);
+      }, 500);
+    }, 800);
+  });
+}
+
+function showScoreEffect(points) {
+  const el = document.createElement('div');
+  el.textContent = `+${points}`;
+  el.style.position = 'fixed';
+  el.style.top = '40%';
+  el.style.left = '50%';
+  el.style.transform = 'translate(-50%, -50%) scale(0)';
+  el.style.color = '#00E5FF'; // Cyan
+  el.style.fontSize = '3rem';
+  el.style.fontWeight = 'bold';
+  el.style.textShadow = '0 0 10px rgba(0, 229, 255, 0.8)';
+  el.style.zIndex = '1000';
+  el.style.pointerEvents = 'none';
+  el.style.transition = 'transform 0.3s ease-out, opacity 0.3s ease-in';
+
+  document.body.appendChild(el);
+
+  requestAnimationFrame(() => {
+    el.style.transform = 'translate(-50%, -50%) scale(1)';
+    setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translate(-50%, -100%) scale(1.5)';
+      setTimeout(() => {
+        document.body.removeChild(el);
+      }, 300);
+    }, 500);
+  });
+}
+
+function showSessionReview() {
+  const quizArea = document.getElementById('quiz-area');
+  quizArea.innerHTML = '';
+
+  const container = document.createElement('div');
+  container.className = 'card fade-in';
+
+  const title = document.createElement('h2');
+  title.textContent = '間違えた問題の確認';
+  title.style.color = '#FF9800';
+  title.style.textAlign = 'center';
+  container.appendChild(title);
+
+  sessionIncorrects.forEach((item, index) => {
+    const qDiv = document.createElement('div');
+    qDiv.style.borderBottom = '1px solid #444';
+    qDiv.style.padding = '15px 0';
+    qDiv.style.textAlign = 'left';
+
+    qDiv.innerHTML = `
+      <p style="font-weight:bold; margin-bottom:10px;">Q${index + 1}. ${item.question.question_text}</p>
+      <p style="color:#ff5252;">あなたの回答: ${item.userAnswer}</p>
+      <p style="color:#69f0ae;">正解: ${item.question.answer}</p>
+      <p style="font-size:0.9rem; color:#aaa; margin-top:5px;">${item.question.explanation || ''}</p>
+    `;
+    container.appendChild(qDiv);
+  });
+
+  const backBtn = document.createElement('button');
+  backBtn.className = 'next-btn';
+  backBtn.textContent = '結果画面に戻る';
+  backBtn.style.marginTop = '20px';
+  backBtn.onclick = () => showResult();
+  container.appendChild(backBtn);
+
+  quizArea.appendChild(container);
 }
 
 // Start

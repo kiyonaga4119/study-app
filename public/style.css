@@ -400,6 +400,16 @@ main {
   margin-bottom: 10px;
 }
 
+.urgent {
+  color: #ff0000 !important;
+  animation: pulse 0.5s infinite alternate;
+}
+
+@keyframes pulse {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(1.2); opacity: 0.8; }
+}
+
 .mode-card p {
   color: #ccc;
   font-size: 0.9rem;

@@ -88,8 +88,9 @@
     </header>
     <main>
       <div class="admin-nav">
-        <button id="nav-users" onclick="showSection('users')">ユーザー管理</button>
-        <button id="nav-content" onclick="showSection('content')">教材管理</button>
+        <button class="tab-btn" onclick="showTab('section-content')">インポート/エクスポート</button>
+        <button class="tab-btn" onclick="showTab('settings')">設定</button>
+        <button class="tab-btn" onclick="showTab('rankings')">ランキング管理</button>
       </div>
 
       <div id="section-users" style="display:none;">
@@ -97,7 +98,7 @@
         <div id="user-list" class="card">Loading...</div>
       </div>
 
-      <div id="section-content" style="display:none;">
+      <div id="section-content" class="tab-content" style="display:none;">
         <h2>教材管理</h2>
 
         <div class="card" style="margin-bottom: 20px; border-left: 5px solid var(--secondary-color);">
@@ -170,16 +171,7 @@
           </div>
         </div>
 
-        <div class="card">
-          <h3>全体設定</h3>
-          <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
-            <input type="text" id="setting-font-header" placeholder="ヘッダーフォント (例: 1.2rem)" style="flex:1;">
-            <input type="text" id="setting-font-question" placeholder="問題文フォント (例: 1.5rem)" style="flex:1;">
-            <input type="text" id="setting-font-title" placeholder="タイトルフォント (例: 1.0rem)" style="flex:1;">
-            <button onclick="saveSettings()"
-              style="padding:5px 15px; background:var(--primary-color); color:white; border:none; border-radius:4px; cursor:pointer;">保存</button>
-          </div>
-        </div>
+
 
         <div class="card" id="question-section" style="display:none;">
           <h3 id="selected-category-name">問題一覧</h3>
@@ -228,9 +220,32 @@
         </div>
 
       </div>
+
+      <div id="settings" class="tab-content" style="display: none;">
+        <h2>全体設定</h2>
+        <div class="form-group">
+          <label>ヘッダーのフォントサイズ (px)</label>
+          <input type="number" id="setting-font-header" placeholder="例: 24">
+        </div>
+        <div class="form-group">
+          <label>問題文のフォントサイズ (px)</label>
+          <input type="number" id="setting-font-question" placeholder="例: 18">
+        </div>
+        <div class="form-group">
+          <label>タイトルのフォントサイズ (px)</label>
+          <input type="number" id="setting-font-title" placeholder="例: 32">
+        </div>
+        <button onclick="saveSettings()">設定を保存</button>
+      </div>
+
+      <div id="rankings" class="tab-content" style="display: none;">
+        <h2>ランキング管理 (最新100件)</h2>
+        <button onclick="loadRankings()" style="margin-bottom: 15px;">更新</button>
+        <div id="ranking-list"></div>
+      </div>
     </main>
   </div>
-  <script src="admin.js?v=1.25"></script>
+  <script src="admin.js?v=1.40"></script>
 </body>
 
 </html>

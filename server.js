@@ -474,6 +474,99 @@ app.post('/api/settings', (req, res) => {
   });
 });
 
+// Rankings
+// Rankings
+app.get('/api/rankings/:category_id', (req, res) => {
+  const categoryId = req.params.category_id;
+  const userId = req.query.user_id;
+
+  const response = {
+    all: [],
+    unique: [],
+    personal: []
+  };
+
+  db.serialize(() => {
+    // 1. All Scores (Top 20)
+    db.all(`
+      SELECT r.score, u.username, r.created_at
+      FROM rankings r
+      JOIN users u ON r.user_id = u.id
+      WHERE r.category_id = ?
+      ORDER BY r.score DESC
+      LIMIT 20
+    `, [categoryId], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      response.all = rows;
+
+      // 2. Unique Users (Top 20)
+      db.all(`
+        SELECT MAX(r.score) as score, u.username, MAX(r.created_at) as created_at
+        FROM rankings r
+        JOIN users u ON r.user_id = u.id
+        WHERE r.category_id = ?
+        GROUP BY r.user_id
+        ORDER BY score DESC
+        LIMIT 20
+      `, [categoryId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        response.unique = rows;
+
+        // 3. Personal History (Top 20)
+        if (userId) {
+          db.all(`
+            SELECT r.score, u.username, r.created_at
+            FROM rankings r
+            JOIN users u ON r.user_id = u.id
+            WHERE r.category_id = ? AND r.user_id = ?
+            ORDER BY r.score DESC
+            LIMIT 20
+          `, [categoryId, userId], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            response.personal = rows;
+            res.json(response);
+          });
+        } else {
+          res.json(response);
+        }
+      });
+    });
+  });
+});
+
+app.post('/api/rankings', (req, res) => {
+  const { user_id, category_id, score } = req.body;
+  const stmt = db.prepare('INSERT INTO rankings (user_id, category_id, score) VALUES (?, ?, ?)');
+  const info = stmt.run(user_id, category_id, score);
+  res.json({ id: info.lastInsertRowid });
+});
+
+// Admin: Get All Rankings (Latest 100)
+app.get('/api/admin/rankings', (req, res) => {
+  const sql = `
+    SELECT r.id, r.score, r.created_at, u.username, c.name as category_name, s.name as subject_name
+    FROM rankings r
+    JOIN users u ON r.user_id = u.id
+    JOIN categories c ON r.category_id = c.id
+    JOIN subjects s ON c.subject_id = s.id
+    ORDER BY r.created_at DESC
+    LIMIT 100
+  `;
+  db.all(sql, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+// Admin: Delete Ranking
+app.delete('/api/rankings/:id', (req, res) => {
+  const stmt = db.prepare('DELETE FROM rankings WHERE id = ?');
+  stmt.run(req.params.id, function (err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ deleted: this.changes });
+  });
+});
+
 // Start Server
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}/`);

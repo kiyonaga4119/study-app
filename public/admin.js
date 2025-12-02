@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = '/api';
 
 // State
 let selectedSubjectId = null;
@@ -10,7 +10,7 @@ let itemsPerPage = 5;
 
 // Init
 function init() {
-  showSection('content'); // Default to content
+  showTab('section-content'); // Default to content
   loadCsvSubjects();
   loadExportedFiles();
   loadSettings();
@@ -50,18 +50,81 @@ async function saveSettings() {
   }
 }
 
-function showSection(section) {
-  document.getElementById('section-users').style.display = 'none';
-  document.getElementById('section-content').style.display = 'none';
-  document.getElementById('nav-users').classList.remove('active');
-  document.getElementById('nav-content').classList.remove('active');
+function showTab(tabId) {
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  document.getElementById(tabId).style.display = 'block';
 
-  document.getElementById(`section-${section}`).style.display = 'block';
-  document.getElementById(`nav-${section}`).classList.add('active');
-
-  if (section === 'users') loadUsers();
-  if (section === 'content') loadSubjects();
+  if (tabId === 'rankings') {
+    loadRankings();
+  }
 }
+
+async function loadRankings() {
+  try {
+    const res = await fetch(`${API_BASE}/admin/rankings`);
+    const rankings = await res.json();
+
+    const list = document.getElementById('ranking-list');
+    if (!rankings || rankings.length === 0) {
+      list.innerHTML = '<p>ランキングデータがありません。</p>';
+      return;
+    }
+
+    let html = `
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="background:#eee;">
+            <th style="padding:8px; border:1px solid #ddd;">ID</th>
+            <th style="padding:8px; border:1px solid #ddd;">日時</th>
+            <th style="padding:8px; border:1px solid #ddd;">ユーザー</th>
+            <th style="padding:8px; border:1px solid #ddd;">教科 - 単元</th>
+            <th style="padding:8px; border:1px solid #ddd;">スコア</th>
+            <th style="padding:8px; border:1px solid #ddd;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    rankings.forEach(r => {
+      const date = new Date(r.created_at).toLocaleString();
+      html += `
+        <tr>
+          <td style="padding:8px; border:1px solid #ddd;">${r.id}</td>
+          <td style="padding:8px; border:1px solid #ddd;">${date}</td>
+          <td style="padding:8px; border:1px solid #ddd;">${r.username}</td>
+          <td style="padding:8px; border:1px solid #ddd;">${r.subject_name} - ${r.category_name}</td>
+          <td style="padding:8px; border:1px solid #ddd; font-weight:bold;">${r.score}</td>
+          <td style="padding:8px; border:1px solid #ddd; text-align:center;">
+            <button onclick="deleteRanking(${r.id})" style="background:#ff5252; color:white; border:none; padding:5px 10px; cursor:pointer;">削除</button>
+          </td>
+        </tr>
+      `;
+    });
+
+    html += '</tbody></table>';
+    list.innerHTML = html;
+  } catch (err) {
+    console.error(err);
+    alert('ランキングの読み込みに失敗しました');
+  }
+}
+
+async function deleteRanking(id) {
+  if (!confirm('本当にこのランキングデータを削除しますか？')) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/rankings/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      loadRankings();
+    } else {
+      alert('削除に失敗しました');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('エラーが発生しました');
+  }
+}
+
 
 // --- Users ---
 async function loadUsers() {
